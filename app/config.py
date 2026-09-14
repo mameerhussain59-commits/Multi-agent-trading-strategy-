@@ -8,9 +8,9 @@ class Settings(BaseSettings):
     trading_mode: str = 'paper'
     mrnasdog_url: str = 'https://mrnasdog.com/'
     mrnasdog_sitemap_url: str = 'https://mrnasdog.com/sitemap.xml'
-    max_research_pages: int = 120
+    max_research_pages: int = 40
     coingecko_api_key: str | None = None
-    request_timeout: float = 15.0
+    request_timeout: float = 12.0
     max_data_age_seconds: int = 120
     account_equity_usd: float = 10000.0
     risk_per_trade_pct: float = 0.5
