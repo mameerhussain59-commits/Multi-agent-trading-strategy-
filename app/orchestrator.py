@@ -26,7 +26,7 @@ class MarketDataAgent:
         if ob.get('bids') and ob.get('asks'):
             bid, ask = float(ob['bids'][0][0]), float(ob['asks'][0][0])
             mid = (ask + bid) / 2
-            if mid > 0:
+            if mid > 0 and ask >= bid:
                 spread = ((ask - bid) / mid) * 100
         return live, cg, dex, liquidity, spread
 
@@ -51,7 +51,7 @@ class RiskAgent:
         if settings.require_dex_liquidity and not liquidity_ok:
             warnings.append('DEX liquidity below configured minimum or unavailable')
         if not spread_ok:
-            warnings.append('Exchange spread above configured maximum')
+            warnings.append('Exchange spread unavailable or above configured maximum')
         return make_trade_plan(
             token.symbol, market.price, technical.atr, score,
             [f'MrNasdog score={token.source_score}/10', f'{market.exchange} live price', f'{technical.timeframe} trend={technical.trend}'],
@@ -73,7 +73,8 @@ class MasterAgent:
             try:
                 live, cg, dex, liquidity, spread = await self.market.run(token)
                 liquidity_ok = liquidity >= settings.min_liquidity_usd
-                spread_ok = spread is None or spread <= settings.max_spread_pct
+                # Fail closed: an unmeasured spread is not considered safe for execution.
+                spread_ok = spread is not None and spread <= settings.max_spread_pct
                 market = MarketSnapshot(
                     symbol=token.symbol, pair=live['pair'], price=live['price'], change_24h=live['change_24h'],
                     volume_24h=live['volume_24h'], high_24h=live['high_24h'], low_24h=live['low_24h'],
@@ -93,7 +94,7 @@ class MasterAgent:
                 results.append(result)
                 record_event('scan_result', token.symbol, {
                     'score': plan.score, 'executable': plan.executable, 'exchange': market.exchange,
-                    'price': market.price, 'observed_at': live.get('timestamp'), 'warnings': plan.warnings, 'sources': result.data_sources,
+                    'price': market.price, 'observed_at': live.get('observed_at'), 'warnings': plan.warnings, 'sources': result.data_sources,
                 })
             except Exception as exc:
                 record_event('scan_error', token.symbol, {'error': str(exc)})
