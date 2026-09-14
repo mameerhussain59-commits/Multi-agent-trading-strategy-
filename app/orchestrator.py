@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from app.audit import record_event
 from app.config import settings
 from app.data import coingecko_coin, dexscreener_token, live_market, mrnasdog_scored_tokens
 from app.models import MarketSnapshot, ScanResult, Token
@@ -110,15 +111,24 @@ class MasterAgent:
                 if portfolio_warnings:
                     plan.warnings.extend(portfolio_warnings)
                 plan.executable = plan.executable and allowed
-                results.append(
-                    ScanResult(
-                        token=token,
-                        market=market,
-                        technical=technical,
-                        trade=plan,
-                        data_sources=['MrNasdog', 'Binance/Bybit', 'CoinGecko', 'DEX Screener'],
-                    )
+                result = ScanResult(
+                    token=token,
+                    market=market,
+                    technical=technical,
+                    trade=plan,
+                    data_sources=['MrNasdog', 'Binance/Bybit', 'CoinGecko', 'DEX Screener'],
                 )
-            except Exception:
+                results.append(result)
+                record_event('scan_result', token.symbol, {
+                    'score': plan.score,
+                    'executable': plan.executable,
+                    'exchange': market.exchange,
+                    'price': market.price,
+                    'observed_at': getattr(live, 'timestamp', None) if not isinstance(live, dict) else live.get('timestamp'),
+                    'warnings': plan.warnings,
+                    'sources': result.data_sources,
+                })
+            except Exception as exc:
+                record_event('scan_error', token.symbol, {'error': str(exc)})
                 continue
         return sorted(results, key=lambda x: x.trade.score, reverse=True)
