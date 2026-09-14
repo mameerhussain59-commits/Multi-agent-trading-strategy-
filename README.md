@@ -15,7 +15,7 @@ A real-data multi-agent crypto research and paper-trading system. **No synthetic
 - **Technical Agent**: RSI, EMA(20), EMA(50), ATR and trend from real exchange candles.
 - **Signal Agent**: combines MrNasdog score, live momentum, 24h movement, volume and liquidity gates.
 - **Risk Agent**: fixed account-risk sizing, stop loss and three take-profit levels.
-- **Portfolio Gate**: duplicate-position protection, concurrent-position cap, total risk cap, daily-loss kill switch, total exposure cap and real-candle return correlation control.
+- **Portfolio Gate**: duplicate-position protection, concurrent-position cap, total risk cap, daily-loss kill switch, total exposure cap, asset-bucket concentration control and real-candle return correlation control.
 - **Paper Execution**: persists approved plans and supports staged TP1/TP2/TP3 exits with breakeven protection.
 - **Position Monitor**: repeatedly reads live exchange prices and updates paper positions without inventing observations.
 - **Audit Trail**: records scan decisions, provider failures and scheduler cycles in SQLite.
@@ -33,11 +33,11 @@ Every scan result contains source names and timestamps. If a live exchange canno
 
 ## Backtesting
 
-`GET /api/backtest/{symbol}?interval=1h&limit=1000` uses real historical Binance klines only. It never generates synthetic candles. The backtest uses the same technical indicators and account-risk sizing family used by the live scan pipeline.
+`GET /api/backtest/{symbol}?interval=1h&limit=1000` uses real historical Binance klines only. It never generates synthetic candles. Entries use the next real candle open after a completed signal; if a real candle touches both SL and TP, the backtest assumes SL first conservatively. Open positions at the end of the dataset are marked to the final real close. The report includes return, win rate and maximum drawdown and applies the configured position-size cap.
 
 ## Safety
 
-Default mode is `paper`. No exchange secret is required for discovery or market analysis. Live-money execution remains explicitly gated and disabled by the default configuration. Do not enable live trading until exchange permissions, symbol filters, order sizing and operational controls have been independently verified.
+Default mode is `paper`. No exchange secret is required for discovery or market analysis. Live-money execution remains explicitly gated and disabled by the default configuration. The authenticated Binance adapter is intentionally not part of the automatic scan/paper pipeline; live execution should not be enabled until exchange symbol filters, protective-order handling, order idempotency and operational controls have been independently verified.
 
 ## Run
 
@@ -57,6 +57,7 @@ API:
 - `POST /api/paper/open/{symbol}`
 - `POST /api/paper/monitor`
 - `GET /api/paper/trades`
+- `GET /api/audit?limit=200`
 - `GET /api/backtest/{symbol}?interval=1h&limit=1000`
 
 CLI:
@@ -67,10 +68,11 @@ python -m app.cli scan
 python -m app.cli paper
 python -m app.cli monitor
 python -m app.cli trades
+python -m app.cli scheduler 60
 python -m app.cli backtest BTC
 ```
 
-For continuous operation, call `app.scheduler.run_forever()` from the deployment worker with an interval of at least 5 seconds.
+The scheduler performs a live-data scan and paper-position monitoring cycle continuously. Its minimum interval is 5 seconds; a provider failure is recorded as an audit event rather than replaced with fake data.
 
 ## Data integrity rule
 
