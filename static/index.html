@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentTrade · Multi-Agent Crypto Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            surface: { 950: '#06080f', 900: '#0b0f1a', 850: '#0f1424', 800: '#151b2d', 700: '#1c2438' },
+            accent: { DEFAULT: '#22c55e', dim: '#16a34a', soft: 'rgba(34,197,94,0.12)' }
+          },
+          fontFamily: {
+            sans: ['\"DM Sans\"', 'system-ui', 'sans-serif'],
+            mono: ['\"IBM Plex Mono\"', 'ui-monospace', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      background: #06080f;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -20%, rgba(34,197,94,0.08), transparent),
+        radial-gradient(ellipse 60% 40% at 100% 0%, rgba(59,130,246,0.05), transparent);
+    }
+    .card {
+      background: linear-gradient(180deg, rgba(21,27,45,0.9) 0%, rgba(15,20,36,0.95) 100%);
+      border: 1px solid rgba(148,163,184,0.08);
+      box-shadow: 0 4px 24px -4px rgba(0,0,0,0.45);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+      box-shadow: 0 2px 12px -2px rgba(34,197,94,0.4);
+    }
+    .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+    .btn-primary:disabled { opacity: 0.55; cursor: not-allowed; }
+    .btn-ghost { background: rgba(148,163,184,0.06); border: 1px solid rgba(148,163,184,0.1); }
+    .btn-ghost:hover { background: rgba(148,163,184,0.12); }
+    .score-track { background: rgba(148,163,184,0.12); }
+    .score-fill { background: linear-gradient(90deg, #ef4444 0%, #f59e0b 45%, #22c55e 100%); transition: width 0.5s ease; }
+    .pulse { animation: pulse-dot 2s cubic-bezier(0.4,0,0.6,1) infinite; }
+    @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+    .spin { animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    .scrollbar::-webkit-scrollbar { width: 5px; height: 5px; }
+    .scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    .tab-active { color: #22c55e; border-bottom: 2px solid #22c55e; background: rgba(34,197,94,0.06); }
+    .toast { animation: slideIn 0.25s ease; }
+    @keyframes slideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  </style>
+</head>
+<body class="h-full text-slate-200 font-sans antialiased">
+
+  <nav class="sticky top-0 z-40 border-b border-white/[0.04] bg-surface-950/80 backdrop-blur-xl">
+    <div class="max-w-[1440px] mx-auto px-5 h-14 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-accent to-emerald-700 flex items-center justify-center">
+          <svg class="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+          </svg>
+        </div>
+        <div class="leading-tight">
+          <div class="font-semibold text-white tracking-tight">AgentTrade</div>
+          <div class="text-[10px] text-slate-500 uppercase tracking-widest">Multi-Agent · Real Data</div>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <div id="status-pill" class="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface-800 border border-white/[0.06] text-xs">
+          <span id="status-dot" class="w-1.5 h-1.5 rounded-full bg-slate-500 pulse"></span>
+          <span id="status-label" class="text-slate-400">Connecting</span>
+        </div>
+        <div class="hidden md:block text-xs text-slate-500">
+          Equity <span id="nav-equity" class="text-accent font-mono font-medium">$10,000</span>
+        </div>
+        <button id="btn-scan" onclick="runScan()" class="btn-primary text-white text-sm font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition">
+          <svg id="scan-icon" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+          </svg>
+          <span id="scan-label">Scan Market</span>
+        </button>
+        <button onclick="runMonitor()" class="btn-ghost text-slate-300 text-sm px-3 py-2 rounded-lg transition">Monitor</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="max-w-[1440px] mx-auto px-5 py-6 space-y-6">
+    <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div class="card rounded-xl px-4 py-3.5">
+        <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-1">Mode</div>
+        <div id="kpi-mode" class="text-base font-semibold text-accent">paper</div>
+      </div>
+      <div class="card rounded-xl px-4 py-3.5">
+        <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-1">Tokens Scanned</div>
+        <div id="kpi-scanned" class="text-base font-semibold text-white">—</div>
+      </div>
+      <div class="card rounded-xl px-4 py-3.5">
+        <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-1">Executable</div>
+        <div id="kpi-exec" class="text-base font-semibold text-emerald-400">—</div>
+      </div>
+      <div class="card rounded-xl px-4 py-3.5">
+        <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-1">Open Positions</div>
+        <div id="kpi-open" class="text-base font-semibold text-amber-400">—</div>
+      </div>
+      <div class="card rounded-xl px-4 py-3.5">
+        <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-1">Risk / Trade</div>
+        <div id="kpi-risk" class="text-base font-semibold text-slate-200">0.5%</div>
+      </div>
+      <div class="card rounded-xl px-4 py-3.5">
+        <div class="text-[11px] uppercase tracking-wider text-slate-500 mb-1">Last Scan</div>
+        <div id="kpi-time" class="text-sm font-mono text-slate-400">—</div>
+      </div>
+    </div>
+
+    <div class="flex gap-1 border-b border-white/[0.06]">
+      <button class="tab tab-active px-4 py-2.5 text-sm font-medium rounded-t-lg transition" data-tab="scan">Live Scan</button>
+      <button class="tab px-4 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-300 rounded-t-lg transition" data-tab="trades">Positions</button>
+      <button class="tab px-4 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-300 rounded-t-lg transition" data-tab="audit">Audit Log</button>
+      <button class="tab px-4 py-2.5 text-sm font-medium text-slate-500 hover:text-slate-300 rounded-t-lg transition" data-tab="backtest">Backtest</button>
+    </div>
+
+    <section id="panel-scan" class="fade-in">
+      <div class="card rounded-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b border-white/[0.04] flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Market Scan Results</h2>
+            <p class="text-xs text-slate-500 mt-0.5">MrNasdog · Binance / Bybit · CoinGecko · DEX Screener</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <label class="text-xs text-slate-500">Limit</label>
+            <select id="scan-limit" class="bg-surface-800 border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="30">30</option>
+              <option value="50">50</option>
+            </select>
+          </div>
+        </div>
+        <div class="overflow-x-auto scrollbar">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-[10px] uppercase tracking-wider text-slate-500 bg-surface-900/60">
+                <th class="text-left px-4 py-3 font-medium">Symbol</th>
+                <th class="text-left px-4 py-3 font-medium">Score</th>
+                <th class="text-left px-4 py-3 font-medium">Price</th>
+                <th class="text-left px-4 py-3 font-medium">24h</th>
+                <th class="text-left px-4 py-3 font-medium">Trend</th>
+                <th class="text-left px-4 py-3 font-medium">RSI</th>
+                <th class="text-left px-4 py-3 font-medium">Liquidity</th>
+                <th class="text-left px-4 py-3 font-medium">Spread</th>
+                <th class="text-left px-4 py-3 font-medium">Status</th>
+                <th class="text-left px-4 py-3 font-medium"></th>
+              </tr>
+            </thead>
+            <tbody id="scan-body">
+              <tr>
+                <td colspan="10" class="px-4 py-16 text-center">
+                  <div class="flex flex-col items-center gap-3 text-slate-500">
+                    <p class="text-sm">Click <span class="text-accent font-medium">Scan Market</span> to load live data</p>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-trades" class="hidden fade-in">
+      <div class="card rounded-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b border-white/[0.04] flex justify-between items-center">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Paper Positions</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Staged TP1 → TP2 → TP3 with breakeven</p>
+          </div>
+          <button onclick="loadTrades()" class="btn-ghost text-xs px-3 py-1.5 rounded-lg text-slate-400">Refresh</button>
+        </div>
+        <div class="overflow-x-auto scrollbar">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-[10px] uppercase tracking-wider text-slate-500 bg-surface-900/60">
+                <th class="text-left px-4 py-3">ID</th>
+                <th class="text-left px-4 py-3">Symbol</th>
+                <th class="text-left px-4 py-3">Status</th>
+                <th class="text-left px-4 py-3">Entry</th>
+                <th class="text-left px-4 py-3">Stop</th>
+                <th class="text-left px-4 py-3">TP Levels</th>
+                <th class="text-left px-4 py-3">Size</th>
+                <th class="text-left px-4 py-3">PnL</th>
+                <th class="text-left px-4 py-3">Opened</th>
+              </tr>
+            </thead>
+            <tbody id="trades-body">
+              <tr><td colspan="9" class="px-4 py-12 text-center text-slate-500 text-sm">No positions yet</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-audit" class="hidden fade-in">
+      <div class="card rounded-2xl overflow-hidden">
+        <div class="px-5 py-4 border-b border-white/[0.04] flex justify-between items-center">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Audit Trail</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Every decision, provider failure & monitor cycle</p>
+          </div>
+          <button onclick="loadAudit()" class="btn-ghost text-xs px-3 py-1.5 rounded-lg text-slate-400">Refresh</button>
+        </div>
+        <div id="audit-list" class="max-h-[560px] overflow-y-auto scrollbar divide-y divide-white/[0.03]">
+          <div class="px-5 py-12 text-center text-slate-500 text-sm">Loading…</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="panel-backtest" class="hidden fade-in">
+      <div class="card rounded-2xl p-6">
+        <h2 class="text-sm font-semibold text-white mb-0.5">Backtest Engine</h2>
+        <p class="text-xs text-slate-500 mb-5">Real Binance historical klines only</p>
+        <div class="flex flex-wrap gap-4 items-end mb-6">
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1.5 uppercase tracking-wider">Symbol</label>
+            <input id="bt-symbol" value="BTC" class="bg-surface-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm font-mono w-28 uppercase focus:outline-none" />
+          </div>
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1.5 uppercase tracking-wider">Interval</label>
+            <select id="bt-interval" class="bg-surface-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm focus:outline-none">
+              <option value="15m">15m</option>
+              <option value="1h" selected>1h</option>
+              <option value="4h">4h</option>
+              <option value="1d">1d</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1.5 uppercase tracking-wider">Candles</label>
+            <select id="bt-limit" class="bg-surface-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm focus:outline-none">
+              <option value="500">500</option>
+              <option value="1000" selected>1000</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] text-slate-500 mb-1.5 uppercase tracking-wider">Fee (bps)</label>
+            <input id="bt-fee" type="number" value="10" class="bg-surface-800 border border-white/[0.08] rounded-lg px-3 py-2 text-sm w-20 focus:outline-none" />
+          </div>
+          <button id="btn-bt" onclick="runBacktest()" class="btn-primary text-white text-sm font-medium px-5 py-2 rounded-lg">Run Backtest</button>
+        </div>
+        <div id="bt-result" class="hidden">
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+            <div class="bg-surface-900/70 rounded-xl p-4 border border-white/[0.04]">
+              <div class="text-[11px] text-slate-500 uppercase tracking-wider mb-1">Net Return</div>
+              <div id="bt-return" class="text-xl font-semibold font-mono"></div>
+            </div>
+            <div class="bg-surface-900/70 rounded-xl p-4 border border-white/[0.04]">
+              <div class="text-[11px] text-slate-500 uppercase tracking-wider mb-1">Win Rate</div>
+              <div id="bt-winrate" class="text-xl font-semibold font-mono text-white"></div>
+            </div>
+            <div class="bg-surface-900/70 rounded-xl p-4 border border-white/[0.04]">
+              <div class="text-[11px] text-slate-500 uppercase tracking-wider mb-1">Max Drawdown</div>
+              <div id="bt-dd" class="text-xl font-semibold font-mono text-rose-400"></div>
+            </div>
+            <div class="bg-surface-900/70 rounded-xl p-4 border border-white/[0.04]">
+              <div class="text-[11px] text-slate-500 uppercase tracking-wider mb-1">Trades / Fees</div>
+              <div id="bt-trades" class="text-xl font-semibold font-mono text-white"></div>
+            </div>
+          </div>
+          <pre id="bt-json" class="bg-surface-950 rounded-xl p-4 text-[11px] font-mono text-slate-400 overflow-auto max-h-72 scrollbar border border-white/[0.04]"></pre>
+        </div>
+      </div>
+    </section>
+
+    <footer class="text-center text-[11px] text-slate-600 py-4">
+      AgentTrade · Real-data multi-agent system · Paper trading only · Not financial advice
+    </footer>
+  </div>
+
+  <div id="toasts" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm"></div>
+
+  <script>
+    const API = window.location.origin;
+
+    document.querySelectorAll('.tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(b => {
+          b.classList.remove('tab-active');
+          b.classList.add('text-slate-500');
+        });
+        btn.classList.add('tab-active');
+        btn.classList.remove('text-slate-500');
+        ['scan','trades','audit','backtest'].forEach(t => {
+          document.getElementById('panel-' + t).classList.toggle('hidden', t !== btn.dataset.tab);
+        });
+        if (btn.dataset.tab === 'trades') loadTrades();
+        if (btn.dataset.tab === 'audit') loadAudit();
+      });
+    });
+
+    function toast(msg, type = 'info') {
+      const el = document.createElement('div');
+      const colors = {
+        info: 'border-slate-600/50 bg-surface-800',
+        success: 'border-emerald-500/40 bg-emerald-950/90',
+        error: 'border-rose-500/40 bg-rose-950/90'
+      };
+      el.className = `toast card rounded-xl px-4 py-3 text-sm border ${colors[type] || colors.info}`;
+      el.textContent = msg;
+      document.getElementById('toasts').appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; el.style.transition = 'opacity 0.3s'; setTimeout(() => el.remove(), 300); }, 3800);
+    }
+
+    function fmt(n, d = 2) {
+      if (n == null || isNaN(n)) return '—';
+      return Number(n).toLocaleString(undefined, { maximumFractionDigits: d });
+    }
+    function pct(n) {
+      if (n == null || isNaN(n)) return '—';
+      return (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
+    }
+
+    async function checkHealth() {
+      try {
+        const r = await fetch(API + '/health');
+        const d = await r.json();
+        document.getElementById('status-dot').className = 'w-1.5 h-1.5 rounded-full bg-accent pulse';
+        document.getElementById('status-label').textContent = 'Live · ' + d.mode;
+        document.getElementById('status-pill').classList.remove('hidden');
+        document.getElementById('kpi-mode').textContent = d.mode;
+        document.getElementById('nav-equity').textContent = '$' + fmt(d.account_equity_usd, 0);
+        document.getElementById('kpi-risk').textContent = d.risk_per_trade_pct + '%';
+      } catch {
+        document.getElementById('status-dot').className = 'w-1.5 h-1.5 rounded-full bg-rose-500';
+        document.getElementById('status-label').textContent = 'Offline';
+      }
+    }
+
+    async function runScan() {
+      const btn = document.getElementById('btn-scan');
+      const icon = document.getElementById('scan-icon');
+      const label = document.getElementById('scan-label');
+      btn.disabled = true;
+      icon.classList.add('spin');
+      label.textContent = 'Scanning…';
+      try {
+        const limit = document.getElementById('scan-limit').value;
+        const r = await fetch(API + '/api/scan?limit=' + limit);
+        if (!r.ok) throw new Error((await r.text()).slice(0, 120));
+        const data = await r.json();
+        renderScan(data);
+        document.getElementById('kpi-scanned').textContent = data.length;
+        document.getElementById('kpi-exec').textContent = data.filter(x => x.trade && x.trade.executable).length;
+        document.getElementById('kpi-time').textContent = new Date().toLocaleTimeString();
+        toast('Scan complete — ' + data.length + ' tokens', 'success');
+      } catch (e) {
+        toast('Scan failed: ' + e.message, 'error');
+        document.getElementById('scan-body').innerHTML = '<tr><td colspan="10" class="px-4 py-10 text-center text-rose-400/80 text-sm">Scan error: ' + e.message + '</td></tr>';
+      } finally {
+        btn.disabled = false;
+        icon.classList.remove('spin');
+        label.textContent = 'Scan Market';
+      }
+    }
+
+    function renderScan(data) {
+      const tbody = document.getElementById('scan-body');
+      if (!data.length) {
+        tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-12 text-center text-slate-500 text-sm">No results</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.map(function(row) {
+        var t = row.token || {};
+        var m = row.market || {};
+        var tech = row.technical || {};
+        var trade = row.trade || {};
+        var score = trade.score != null ? trade.score : 0;
+        var chg = m.change_24h != null ? m.change_24h : 0;
+        var scoreCls = score >= 70 ? 'text-emerald-400' : score >= 55 ? 'text-amber-400' : 'text-slate-400';
+        var chgCls = chg >= 0 ? 'text-emerald-400' : 'text-rose-400';
+        var trendCls = { bullish: 'bg-emerald-500/15 text-emerald-400', bearish: 'bg-rose-500/15 text-rose-400', neutral: 'bg-slate-700/60 text-slate-400' }[tech.trend] || 'bg-slate-700/60 text-slate-400';
+        var status = trade.executable
+          ? '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/15 text-emerald-400">EXECUTABLE</span>'
+          : '<span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-slate-700/50 text-slate-500">Blocked</span>';
+        var action = trade.executable
+          ? '<button onclick="openTrade(\'' + t.symbol + '\')" class="text-[11px] font-medium px-3 py-1.5 rounded-lg bg-accent/15 text-accent hover:bg-accent/25 transition">Open</button>'
+          : '<span class="text-slate-700 text-xs">—</span>';
+        return '<tr class="border-t border-white/[0.03] hover:bg-white/[0.02] transition">' +
+          '<td class="px-4 py-3"><div class="font-semibold text-white">' + (t.symbol || '—') + '</div><div class="text-[10px] text-slate-500 uppercase">' + (m.exchange || '') + '</div></td>' +
+          '<td class="px-4 py-3"><div class="font-mono text-sm ' + scoreCls + ' font-medium">' + fmt(score, 1) + '</div><div class="score-track w-14 h-1 rounded-full mt-1.5 overflow-hidden"><div class="score-fill h-full rounded-full" style="width:' + Math.min(100, score) + '%"></div></div></td>' +
+          '<td class="px-4 py-3 font-mono text-white text-[13px]">$' + fmt(m.price, m.price < 1 ? 6 : 4) + '</td>' +
+          '<td class="px-4 py-3 font-mono text-[13px] ' + chgCls + '">' + pct(chg) + '</td>' +
+          '<td class="px-4 py-3"><span class="inline-flex px-2 py-0.5 rounded text-[11px] font-medium ' + trendCls + '">' + (tech.trend || '—') + '</span></td>' +
+          '<td class="px-4 py-3 font-mono text-[13px] text-slate-300">' + fmt(tech.rsi, 1) + '</td>' +
+          '<td class="px-4 py-3 font-mono text-[13px] text-slate-400">$' + fmt(m.liquidity_usd, 0) + '</td>' +
+          '<td class="px-4 py-3 font-mono text-[12px] text-slate-500">' + (m.spread_pct != null ? m.spread_pct.toFixed(3) + '%' : '—') + '</td>' +
+          '<td class="px-4 py-3">' + status + '</td>' +
+          '<td class="px-4 py-3">' + action + '</td></tr>';
+      }).join('');
+    }
+
+    async function openTrade(symbol) {
+      if (!confirm('Open paper trade for ' + symbol + '?')) return;
+      try {
+        const r = await fetch(API + '/api/paper/open/' + symbol, { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) {
+          var msg = typeof d.detail === 'object' ? (d.detail.message || JSON.stringify(d.detail)) : (d.detail || JSON.stringify(d));
+          throw new Error(msg);
+        }
+        toast('Paper trade opened · ' + symbol + ' (#' + d.trade_id + ')', 'success');
+        loadTrades();
+      } catch (e) {
+        toast('Rejected: ' + e.message, 'error');
+      }
+    }
+
+    async function runMonitor() {
+      try {
+        const r = await fetch(API + '/api/paper/monitor', { method: 'POST' });
+        const events = await r.json();
+        toast('Monitor done · ' + events.length + ' events', 'success');
+        loadTrades();
+      } catch (e) {
+        toast('Monitor failed: ' + e.message, 'error');
+      }
+    }
+
+    async function loadTrades() {
+      try {
+        const r = await fetch(API + '/api/paper/trades');
+        const data = await r.json();
+        document.getElementById('kpi-open').textContent = data.filter(function(t) { return t.status === 'OPEN'; }).length;
+        const tbody = document.getElementById('trades-body');
+        if (!data.length) {
+          tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-12 text-center text-slate-500 text-sm">No positions yet</td></tr>';
+          return;
+        }
+        tbody.innerHTML = data.map(function(t) {
+          var p = t.payload || {};
+          var pnl = t.pnl_usd;
+          var pnlCls = pnl > 0 ? 'text-emerald-400' : pnl < 0 ? 'text-rose-400' : 'text-slate-500';
+          var stCls = t.status === 'OPEN' ? 'bg-amber-500/15 text-amber-400' : 'bg-slate-700/50 text-slate-400';
+          return '<tr class="border-t border-white/[0.03] hover:bg-white/[0.02]">' +
+            '<td class="px-4 py-3 font-mono text-slate-500 text-xs">#' + t.id + '</td>' +
+            '<td class="px-4 py-3 font-semibold text-white">' + t.symbol + '</td>' +
+            '<td class="px-4 py-3"><span class="inline-flex px-2 py-0.5 rounded text-[11px] font-medium ' + stCls + '">' + t.status + '</span></td>' +
+            '<td class="px-4 py-3 font-mono text-[13px]">$' + fmt(p.entry, 4) + '</td>' +
+            '<td class="px-4 py-3 font-mono text-[13px] text-rose-300/80">$' + fmt(p.stop_loss, 4) + '</td>' +
+            '<td class="px-4 py-3 font-mono text-[11px] text-slate-400">' + fmt(p.take_profit_1,4) + ' / ' + fmt(p.take_profit_2,4) + ' / ' + fmt(p.take_profit_3,4) + '</td>' +
+            '<td class="px-4 py-3 font-mono text-[13px]">' + fmt(p.remaining_size || p.position_size, 4) + '</td>' +
+            '<td class="px-4 py-3 font-mono text-[13px] ' + pnlCls + '">' + (pnl != null ? '$' + fmt(pnl) : '—') + '</td>' +
+            '<td class="px-4 py-3 text-[11px] text-slate-500">' + (t.created_at ? new Date(t.created_at).toLocaleString() : '—') + '</td></tr>';
+        }).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    async function loadAudit() {
+      try {
+        const r = await fetch(API + '/api/audit?limit=80');
+        const data = await r.json();
+        const list = document.getElementById('audit-list');
+        if (!data.length) {
+          list.innerHTML = '<div class="px-5 py-12 text-center text-slate-500 text-sm">No events yet</div>';
+          return;
+        }
+        var typeColor = {
+          scan_result: 'text-accent', scan_error: 'text-rose-400', paper_trade_opened: 'text-emerald-400',
+          paper_monitor: 'text-amber-400', scheduler_cycle: 'text-blue-400', scheduler_error: 'text-rose-400'
+        };
+        list.innerHTML = data.map(function(ev) {
+          return '<div class="px-5 py-3 flex gap-4 text-sm hover:bg-white/[0.015] transition">' +
+            '<div class="w-36 shrink-0 text-[11px] text-slate-600 font-mono">' + (ev.created_at ? new Date(ev.created_at).toLocaleString() : '') + '</div>' +
+            '<div class="w-40 shrink-0 text-xs font-medium ' + (typeColor[ev.event_type] || 'text-slate-400') + '">' + ev.event_type + '</div>' +
+            '<div class="w-16 shrink-0 font-mono text-xs text-white">' + (ev.symbol || '—') + '</div>' +
+            '<div class="flex-1 text-[11px] text-slate-500 font-mono truncate">' + JSON.stringify(ev.payload).slice(0, 160) + '</div></div>';
+        }).join('');
+      } catch (e) { console.error(e); }
+    }
+
+    async function runBacktest() {
+      var btn = document.getElementById('btn-bt');
+      btn.disabled = true;
+      btn.textContent = 'Running…';
+      try {
+        var symbol = document.getElementById('bt-symbol').value.trim().toUpperCase();
+        var interval = document.getElementById('bt-interval').value;
+        var limit = document.getElementById('bt-limit').value;
+        var fee = document.getElementById('bt-fee').value;
+        var r = await fetch(API + '/api/backtest/' + symbol + '?interval=' + interval + '&limit=' + limit + '&fee_bps=' + fee);
+        if (!r.ok) throw new Error(await r.text());
+        var d = await r.json();
+        document.getElementById('bt-result').classList.remove('hidden');
+        var ret = d.return_pct;
+        var retEl = document.getElementById('bt-return');
+        retEl.textContent = pct(ret);
+        retEl.className = 'text-xl font-semibold font-mono ' + (ret >= 0 ? 'text-emerald-400' : 'text-rose-400');
+        document.getElementById('bt-winrate').textContent = fmt(d.win_rate_pct, 1) + '%';
+        document.getElementById('bt-dd').textContent = fmt(d.max_drawdown_pct, 2) + '%';
+        document.getElementById('bt-trades').textContent = d.trades + ' / $' + fmt(d.total_fees);
+        document.getElementById('bt-json').textContent = JSON.stringify(d, null, 2);
+        toast('Backtest complete', 'success');
+      } catch (e) {
+        toast('Backtest failed: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Run Backtest';
+      }
+    }
+
+    checkHealth();
+    loadTrades();
+    setInterval(checkHealth, 25000);
+  </script>
+</body>
+</html>
