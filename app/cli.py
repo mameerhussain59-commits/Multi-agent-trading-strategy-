@@ -46,18 +46,24 @@ async def main():
         await run_forever(interval_seconds=interval, limit=30)
     elif cmd == 'backtest':
         if len(sys.argv) < 3:
-            raise SystemExit('use: python -m app.cli backtest BTC')
+            raise SystemExit('use: python -m app.cli backtest BTC [fee_bps] [slippage_bps]')
+        fee_bps = float(sys.argv[3]) if len(sys.argv) > 3 else 10.0
+        slippage_bps = float(sys.argv[4]) if len(sys.argv) > 4 else 0.0
+        if fee_bps < 0 or slippage_bps < 0:
+            raise SystemExit('fee_bps and slippage_bps must be non-negative')
         print(json.dumps(
             await backtest_binance(
                 sys.argv[2],
                 initial_equity=settings.account_equity_usd,
                 risk_pct=settings.risk_per_trade_pct,
                 max_position_pct=settings.max_position_pct,
+                fee_bps=fee_bps,
+                slippage_bps=slippage_bps,
             ),
             indent=2,
         ))
     else:
-        raise SystemExit('use discover, scan, paper, monitor, trades, scheduler [seconds] or backtest SYMBOL')
+        raise SystemExit('use discover, scan, paper, monitor, trades, scheduler [seconds] or backtest SYMBOL [fee_bps] [slippage_bps]')
 
 
 if __name__ == '__main__':
