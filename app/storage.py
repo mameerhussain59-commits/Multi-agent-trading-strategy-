@@ -15,6 +15,19 @@ def _connect():
             con.execute(f'ALTER TABLE paper_trades ADD COLUMN {col} {typ}')
         except sqlite3.OperationalError:
             pass
+    # Migrate legacy fully-closed trades into the event ledger exactly once.
+    # Partial legacy fills cannot be reconstructed, so only trades with no event
+    # and a complete closed-trade PnL are backfilled.
+    con.execute(
+        'INSERT INTO paper_trade_events(trade_id,created_at,quantity,exit_price,reason,pnl_usd) '
+        'SELECT p.id, COALESCE(p.closed_at,p.created_at), '
+        'CAST(json_extract(p.payload, "$.position_size") AS REAL), '
+        'COALESCE(p.exit_price, CAST(json_extract(p.payload, "$.entry") AS REAL)), '
+        'COALESCE(p.exit_reason, "LEGACY_CLOSE"), COALESCE(p.pnl_usd, 0) '
+        'FROM paper_trades p '
+        'WHERE p.status="CLOSED" AND COALESCE(p.pnl_usd,0) != 0 '
+        'AND NOT EXISTS (SELECT 1 FROM paper_trade_events e WHERE e.trade_id=p.id)'
+    )
     con.commit()
     return con
 
