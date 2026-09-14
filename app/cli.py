@@ -3,6 +3,8 @@ from app.orchestrator import MasterAgent
 from app.storage import save_scan,create_paper_trade,list_paper_trades
 from app.monitor import monitor_open_trades
 from app.backtest import backtest_binance
+from app.portfolio import portfolio_gate
+from app.scheduler import run_forever
 from app.config import settings
 
 async def main():
@@ -13,12 +15,18 @@ async def main():
     elif cmd=='paper':
         results=await master.scan(30); opened=[]
         for r in results:
-            if r.trade.executable: opened.append({'id':create_paper_trade(r.trade),'symbol':r.trade.symbol,'entry':r.trade.entry,'sl':r.trade.stop_loss,'tp1':r.trade.take_profit_1,'tp2':r.trade.take_profit_2,'tp3':r.trade.take_profit_3})
+            if r.trade.executable:
+                allowed, warnings = portfolio_gate(r.trade)
+                if allowed:
+                    opened.append({'id':create_paper_trade(r.trade),'symbol':r.trade.symbol,'entry':r.trade.entry,'sl':r.trade.stop_loss,'tp1':r.trade.take_profit_1,'tp2':r.trade.take_profit_2,'tp3':r.trade.take_profit_3})
         print(json.dumps(opened,indent=2))
     elif cmd=='monitor': print(json.dumps(await monitor_open_trades(),indent=2))
     elif cmd=='trades': print(json.dumps(list_paper_trades(),indent=2))
+    elif cmd=='scheduler':
+        interval = int(sys.argv[2]) if len(sys.argv)>2 else 60
+        await run_forever(interval_seconds=interval, limit=30)
     elif cmd=='backtest':
         if len(sys.argv)<3: raise SystemExit('use: python -m app.cli backtest BTC')
         print(json.dumps(await backtest_binance(sys.argv[2],initial_equity=settings.account_equity_usd,risk_pct=settings.risk_per_trade_pct),indent=2))
-    else: raise SystemExit('use discover, scan, paper, monitor, trades or backtest SYMBOL')
+    else: raise SystemExit('use discover, scan, paper, monitor, trades, scheduler [seconds] or backtest SYMBOL')
 if __name__=='__main__': asyncio.run(main())
