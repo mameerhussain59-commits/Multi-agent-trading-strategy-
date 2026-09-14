@@ -1,6 +1,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 import re, time, xml.etree.ElementTree as ET
+import asyncio
 import httpx
 from bs4 import BeautifulSoup
 from app.config import settings
@@ -46,27 +47,51 @@ async def _research_urls():
     return out
 
 
+async def _parse_research_page(url: str) -> dict | None:
+    """Fetch one MrNasdog research page and extract symbol + 0-10 score if present."""
+    try:
+        r = await http.get(url)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        text = soup.get_text(' ', strip=True)
+        score_match = re.search(
+            r'(?:MrNasdog\s+score|Score\s*\(0.?10\)|score).*?\b(\d+(?:\.\d+)?)\s*/\s*10\b',
+            text,
+            re.I,
+        )
+        if not score_match:
+            return None
+        score = float(score_match.group(1))
+        if not 0 <= score <= 10:
+            return None
+        title = soup.title.get_text(' ', strip=True) if soup.title else ''
+        symbol_match = re.search(r'\b([A-Z][A-Z0-9]{1,9})\b', title)
+        if not symbol_match:
+            symbol_match = re.search(r'/research/([a-z0-9-]+)', url, re.I)
+        if not symbol_match:
+            return None
+        raw = symbol_match.group(1)
+        symbol = raw.split('-')[0].upper()
+        if symbol in {'THE', 'HOW', 'WHY', 'WHAT', 'THIS', 'THAT', 'YEAR', 'CYCLE'}:
+            return None
+        return {'symbol': symbol, 'score': score, 'url': url, 'observed_at': now().isoformat()}
+    except Exception:
+        return None
+
+
 async def mrnasdog_scored_tokens():
-    """Read actual scored research pages. Inflation-only pages are rejected."""
-    results = []
-    for url in (await _research_urls())[:settings.max_research_pages]:
-        try:
-            r = await http.get(url)
-            soup = BeautifulSoup(r.text, 'html.parser')
-            text = soup.get_text(' ', strip=True)
-            score_match = re.search(r'(?:MrNasdog\s+score|Score\s*\(0.?10\)|score).*?\b(\d+(?:\.\d+)?)\s*/\s*10\b', text, re.I)
-            if not score_match: continue
-            score = float(score_match.group(1))
-            if not 0 <= score <= 10: continue
-            title = soup.title.get_text(' ', strip=True) if soup.title else ''
-            symbol_match = re.search(r'\b([A-Z][A-Z0-9]{1,9})\b', title)
-            if not symbol_match: symbol_match = re.search(r'/research/([a-z0-9-]+)', url, re.I)
-            if not symbol_match: continue
-            raw = symbol_match.group(1)
-            symbol = raw.split('-')[0].upper()
-            results.append({'symbol': symbol, 'score': score, 'url': url, 'observed_at': now().isoformat()})
-        except Exception:
-            continue
+    """Read scored research pages in parallel (limited concurrency). Prefer real scores over fake data."""
+    urls = (await _research_urls())[: settings.max_research_pages]
+    if not urls:
+        return []
+
+    sem = asyncio.Semaphore(8)
+
+    async def limited(url):
+        async with sem:
+            return await _parse_research_page(url)
+
+    pages = await asyncio.gather(*[limited(u) for u in urls], return_exceptions=True)
+    results = [p for p in pages if isinstance(p, dict)]
     unique = {item['symbol']: item for item in results}
     return sorted(unique.values(), key=lambda x: x['score'], reverse=True)
 
