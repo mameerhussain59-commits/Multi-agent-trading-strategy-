@@ -13,38 +13,36 @@ async def monitor_open_trades():
             plan = trade['payload']
             remaining = float(plan.get('remaining_size', plan['position_size']))
             original = float(plan['position_size'])
-            risk_unit = max(float(plan['entry']) - float(plan['stop_loss']), 0.0)
 
             if price <= float(plan['stop_loss']):
                 pnl = close_paper_trade(trade['id'], price, 'STOP_LOSS')
                 events.append({'trade_id': trade['id'], 'symbol': trade['symbol'], 'price': price, 'reason': 'STOP_LOSS', 'pnl_usd': pnl, 'exchange': live['exchange']})
                 continue
 
-            # Take 1/3 at TP1, arm breakeven for the remainder.
             if price >= float(plan['take_profit_1']) and not plan.get('tp1_hit', False):
                 qty = min(remaining, original / 3.0)
                 pnl = close_paper_trade(trade['id'], price, 'TAKE_PROFIT_1', qty)
+                remaining -= qty
+                plan['remaining_size'] = remaining
                 plan['tp1_hit'] = True
                 plan['breakeven_armed'] = True
                 plan['stop_loss'] = max(float(plan['stop_loss']), float(plan['entry']))
                 update_paper_trade_payload(trade['id'], plan)
                 events.append({'trade_id': trade['id'], 'symbol': trade['symbol'], 'price': price, 'reason': 'TAKE_PROFIT_1_PARTIAL', 'quantity': qty, 'pnl_usd': pnl, 'exchange': live['exchange']})
-                remaining -= qty
 
-            # Take another 1/3 of the original size at TP2.
             if price >= float(plan['take_profit_2']) and not plan.get('tp2_hit', False):
                 qty = min(remaining, original / 3.0)
                 pnl = close_paper_trade(trade['id'], price, 'TAKE_PROFIT_2', qty)
+                remaining -= qty
+                plan['remaining_size'] = remaining
                 plan['tp2_hit'] = True
                 plan['breakeven_armed'] = True
                 update_paper_trade_payload(trade['id'], plan)
                 events.append({'trade_id': trade['id'], 'symbol': trade['symbol'], 'price': price, 'reason': 'TAKE_PROFIT_2_PARTIAL', 'quantity': qty, 'pnl_usd': pnl, 'exchange': live['exchange']})
-                remaining -= qty
 
             if remaining <= 1e-12:
                 continue
 
-            # TP3 exits the remaining position. If no TP is hit, keep the position open.
             if price >= float(plan['take_profit_3']):
                 pnl = close_paper_trade(trade['id'], price, 'TAKE_PROFIT_3')
                 events.append({'trade_id': trade['id'], 'symbol': trade['symbol'], 'price': price, 'reason': 'TAKE_PROFIT_3', 'pnl_usd': pnl, 'exchange': live['exchange']})
