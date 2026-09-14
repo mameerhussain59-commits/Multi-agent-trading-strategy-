@@ -135,6 +135,13 @@ async def bybit_klines(symbol, interval='60', limit=200):
     return data['result']['list']
 
 
+async def bybit_order_book(symbol, limit=20):
+    r = await http.get('https://api.bybit.com/v5/market/orderbook', {'category': 'spot', 'symbol': symbol, 'limit': limit})
+    data = r.json()
+    if data.get('retCode') != 0: raise DataError(data.get('retMsg', 'Bybit error'))
+    return data['result']
+
+
 async def live_market(symbol):
     pair = symbol.upper().replace('/', '') + 'USDT'
     try:
@@ -147,9 +154,9 @@ async def live_market(symbol):
         try:
             t = await bybit_ticker(pair)
             item = t['result']['list'][0]
-            candles = await bybit_klines(pair)
-            candles = list(reversed(candles))
+            candles = list(reversed(await bybit_klines(pair)))
+            ob = await bybit_order_book(pair)
             if not candles or float(item['lastPrice']) <= 0: raise DataError('Bybit returned incomplete market data')
-            return {'exchange': 'bybit', 'pair': pair, 'price': float(item['lastPrice']), 'change_24h': float(item.get('price24hPcnt', 0)) * 100, 'volume_24h': float(item.get('turnover24h', 0)), 'high_24h': float(item.get('highPrice24h', 0)), 'low_24h': float(item.get('lowPrice24h', 0)), 'candles': [[r[0], r[1], r[2], r[3], r[4]] for r in candles], 'order_book': None, 'observed_at': now().isoformat()}
+            return {'exchange': 'bybit', 'pair': pair, 'price': float(item['lastPrice']), 'change_24h': float(item.get('price24hPcnt', 0)) * 100, 'volume_24h': float(item.get('turnover24h', 0)), 'high_24h': float(item.get('highPrice24h', 0)), 'low_24h': float(item.get('lowPrice24h', 0)), 'candles': [[r[0], r[1], r[2], r[3], r[4]] for r in candles], 'order_book': ob, 'observed_at': now().isoformat()}
         except Exception as ye:
             raise DataError(f'No live exchange data for {symbol}: Binance={be}; Bybit={ye}')
