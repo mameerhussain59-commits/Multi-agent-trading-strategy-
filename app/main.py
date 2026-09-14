@@ -1,4 +1,10 @@
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+
 from app.audit import list_events, record_event
 from app.orchestrator import MasterAgent
 from app.storage import save_scan, create_paper_trade, list_paper_trades
@@ -7,13 +13,42 @@ from app.backtest import backtest_binance
 from app.portfolio import portfolio_gate
 from app.config import settings
 
-app = FastAPI(title='Multi-Agent Crypto Trader', version='0.7.0')
+app = FastAPI(title='Multi-Agent Crypto Trader', version='0.8.0')
 master = MasterAgent()
+
+# Allow frontend access
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Static files for dashboard
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/")
+async def root():
+    index = STATIC_DIR / "index.html"
+    if index.exists():
+        return FileResponse(index)
+    return {"message": "Dashboard not found. Place index.html in /static"}
 
 
 @app.get('/health')
 async def health():
-    return {'status': 'ok', 'mode': settings.trading_mode, 'real_data_only': True, 'live_trading_enabled': settings.live_trading_enabled and not settings.dry_run}
+    return {
+        'status': 'ok',
+        'mode': settings.trading_mode,
+        'real_data_only': True,
+        'live_trading_enabled': settings.live_trading_enabled and not settings.dry_run,
+        'account_equity_usd': settings.account_equity_usd,
+        'risk_per_trade_pct': settings.risk_per_trade_pct,
+        'max_concurrent_positions': settings.max_concurrent_positions,
+    }
 
 
 @app.get('/api/discover')
