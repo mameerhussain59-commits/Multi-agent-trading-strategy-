@@ -12,10 +12,7 @@ from app.technical import technical_analysis
 class TokenHunterAgent:
     async def run(self, limit=30):
         rows = await mrnasdog_scored_tokens()
-        return [
-            Token(symbol=x['symbol'], source='mrnasdog', source_score=x['score'], source_url=x['url'])
-            for x in rows[:limit]
-        ]
+        return [Token(symbol=x['symbol'], source='mrnasdog', source_score=x['score'], source_url=x['url']) for x in rows[:limit]]
 
 
 class MarketDataAgent:
@@ -45,13 +42,7 @@ class TechnicalAgent:
 
 class SignalAgent:
     def run(self, token, market, technical, liquidity_ok=True):
-        return score_signal(
-            token.source_score,
-            market.change_24h,
-            technical.momentum_score,
-            market.volume_24h > 0,
-            liquidity_ok,
-        )
+        return score_signal(token.source_score, market.change_24h, technical.momentum_score, market.volume_24h > 0, liquidity_ok)
 
 
 class RiskAgent:
@@ -62,15 +53,8 @@ class RiskAgent:
         if not spread_ok:
             warnings.append('Exchange spread above configured maximum')
         return make_trade_plan(
-            token.symbol,
-            market.price,
-            technical.atr,
-            score,
-            [
-                f'MrNasdog score={token.source_score}/10',
-                f'{market.exchange} live price',
-                f'{technical.timeframe} trend={technical.trend}',
-            ],
+            token.symbol, market.price, technical.atr, score,
+            [f'MrNasdog score={token.source_score}/10', f'{market.exchange} live price', f'{technical.timeframe} trend={technical.trend}'],
             warnings,
         )
 
@@ -91,42 +75,25 @@ class MasterAgent:
                 liquidity_ok = liquidity >= settings.min_liquidity_usd
                 spread_ok = spread is None or spread <= settings.max_spread_pct
                 market = MarketSnapshot(
-                    symbol=token.symbol,
-                    pair=live['pair'],
-                    price=live['price'],
-                    change_24h=live['change_24h'],
-                    volume_24h=live['volume_24h'],
-                    high_24h=live['high_24h'],
-                    low_24h=live['low_24h'],
-                    market_cap=(cg or {}).get('market_cap'),
-                    liquidity_usd=liquidity,
-                    spread_pct=spread,
-                    exchange=live['exchange'],
-                    source='live_exchange+coingecko+dexscreener',
+                    symbol=token.symbol, pair=live['pair'], price=live['price'], change_24h=live['change_24h'],
+                    volume_24h=live['volume_24h'], high_24h=live['high_24h'], low_24h=live['low_24h'],
+                    market_cap=(cg or {}).get('market_cap'), liquidity_usd=liquidity, spread_pct=spread,
+                    exchange=live['exchange'], source='live_exchange+coingecko+dexscreener',
                 )
                 technical = self.tech.run(token, live)
                 score = self.signal.run(token, market, technical, liquidity_ok)
                 plan = self.risk.run(token, market, technical, score, liquidity_ok, spread_ok)
+                closes = [float(row[4]) for row in live['candles']]
+                plan.market_returns = [((b / a) - 1.0) for a, b in zip(closes[:-1], closes[1:]) if a > 0]
                 allowed, portfolio_warnings = portfolio_gate(plan)
                 if portfolio_warnings:
                     plan.warnings.extend(portfolio_warnings)
                 plan.executable = plan.executable and allowed
-                result = ScanResult(
-                    token=token,
-                    market=market,
-                    technical=technical,
-                    trade=plan,
-                    data_sources=['MrNasdog', 'Binance/Bybit', 'CoinGecko', 'DEX Screener'],
-                )
+                result = ScanResult(token=token, market=market, technical=technical, trade=plan, data_sources=['MrNasdog', 'Binance/Bybit', 'CoinGecko', 'DEX Screener'])
                 results.append(result)
                 record_event('scan_result', token.symbol, {
-                    'score': plan.score,
-                    'executable': plan.executable,
-                    'exchange': market.exchange,
-                    'price': market.price,
-                    'observed_at': getattr(live, 'timestamp', None) if not isinstance(live, dict) else live.get('timestamp'),
-                    'warnings': plan.warnings,
-                    'sources': result.data_sources,
+                    'score': plan.score, 'executable': plan.executable, 'exchange': market.exchange,
+                    'price': market.price, 'observed_at': live.get('timestamp'), 'warnings': plan.warnings, 'sources': result.data_sources,
                 })
             except Exception as exc:
                 record_event('scan_error', token.symbol, {'error': str(exc)})
