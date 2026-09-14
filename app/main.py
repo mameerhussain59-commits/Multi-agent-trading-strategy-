@@ -3,9 +3,10 @@ from app.orchestrator import MasterAgent
 from app.storage import save_scan, create_paper_trade, list_paper_trades
 from app.monitor import monitor_open_trades
 from app.backtest import backtest_binance
+from app.portfolio import portfolio_gate
 from app.config import settings
 
-app=FastAPI(title='Multi-Agent Crypto Trader',version='0.4.0')
+app=FastAPI(title='Multi-Agent Crypto Trader',version='0.5.0')
 master=MasterAgent()
 
 @app.get('/health')
@@ -21,6 +22,8 @@ async def open_paper(symbol:str):
     results=await master.scan(30); match=next((x for x in results if x.token.symbol.upper()==symbol.upper()),None)
     if not match: raise HTTPException(404,'No live-data scan available for token')
     if not match.trade.executable: raise HTTPException(400,'Trade does not pass signal/risk gates')
+    allowed, warnings = portfolio_gate(match.trade)
+    if not allowed: raise HTTPException(409, {'message':'Portfolio risk gate rejected trade','warnings':warnings})
     trade_id=create_paper_trade(match.trade); return {'trade_id':trade_id,'trade':match.trade.model_dump(mode='json')}
 @app.post('/api/paper/monitor')
 async def paper_monitor(): return await monitor_open_trades()
