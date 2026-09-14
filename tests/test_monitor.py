@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import pytest
 
 from app import monitor
@@ -24,7 +22,11 @@ async def test_monitor_partial_take_profits(monkeypatch):
         },
     }
     monkeypatch.setattr(monitor, 'open_paper_trades', lambda: [trade])
-    monkeypatch.setattr(monitor, 'live_market', lambda symbol: _live(110.0))
+
+    async def fake_live_market(symbol):
+        return {'price': 110.0, 'exchange': 'test-provider'}
+
+    monkeypatch.setattr(monitor, 'live_market', fake_live_market)
     closed = []
     monkeypatch.setattr(monitor, 'close_paper_trade', lambda trade_id, price, reason, quantity=None: closed.append((trade_id, price, reason, quantity)) or 6.0)
     updated = []
@@ -38,7 +40,3 @@ async def test_monitor_partial_take_profits(monkeypatch):
     assert updated[-1][1]['breakeven_armed'] is True
     assert updated[-1][1]['stop_loss'] == 100.0
     assert events[0]['reason'] == 'TAKE_PROFIT_1_PARTIAL'
-
-
-def _live(price):
-    return {'price': price, 'exchange': 'test-real-provider'}
