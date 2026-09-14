@@ -1,0 +1,17 @@
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file='.env', extra='ignore')
+    app_name: str = 'Multi-Agent Crypto Trader'
+    trading_mode: str = 'paper'
+    mrnasdog_url: str = 'https://mrnasdog.com/'
+    coingecko_api_key: str | None = None
+    request_timeout: float = 15.0
+    max_data_age_seconds: int = 120
+    account_equity_usd: float = 10000.0
+    risk_per_trade_pct: float = 0.5
+    max_position_pct: float = 10.0
+    min_signal_score: float = 65.0
+    dry_run: bool = True
+
+settings = Settings()
