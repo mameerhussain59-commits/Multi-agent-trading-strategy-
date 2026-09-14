@@ -1,3 +1,4 @@
+from datetime import datetime, time, timezone
 from types import SimpleNamespace
 
 from app import portfolio, risk
@@ -36,7 +37,19 @@ def test_portfolio_gate_blocks_total_risk(monkeypatch):
         'open_paper_trades',
         lambda: [{'symbol': 'ETH', 'payload': {'risk_usd': 150.0}}],
     )
+    monkeypatch.setattr(portfolio, 'realized_pnl_since', lambda _: 0.0)
     plan = SimpleNamespace(symbol='SOL', risk_usd=100.0)
     allowed, warnings = portfolio.portfolio_gate(plan)
     assert allowed is False
     assert any('portfolio cap' in warning for warning in warnings)
+
+
+def test_portfolio_gate_daily_loss_kill_switch(monkeypatch):
+    monkeypatch.setattr(portfolio.settings, 'account_equity_usd', 10000.0)
+    monkeypatch.setattr(portfolio.settings, 'max_daily_loss_pct', 2.0)
+    monkeypatch.setattr(portfolio, 'open_paper_trades', lambda: [])
+    monkeypatch.setattr(portfolio, 'realized_pnl_since', lambda start: -250.0)
+    plan = SimpleNamespace(symbol='BTC', risk_usd=25.0)
+    allowed, warnings = portfolio.portfolio_gate(plan)
+    assert allowed is False
+    assert any('Daily loss kill switch' in warning for warning in warnings)
