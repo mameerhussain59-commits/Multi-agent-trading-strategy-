@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     max_spread_pct: float = 0.50
     max_concurrent_positions: int = 5
     max_total_risk_pct: float = 2.0
+    max_total_exposure_pct: float = 50.0
+    max_correlation: float = 0.85
     max_daily_loss_pct: float = 2.0
     db_path: str = 'data/trader.db'
     dry_run: bool = True
