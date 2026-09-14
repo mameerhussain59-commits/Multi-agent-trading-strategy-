@@ -15,15 +15,25 @@ async def backtest_binance(
     initial_equity: float = 10000.0,
     risk_pct: float = 0.5,
     max_position_pct: float = 10.0,
+    fee_bps: float = 10.0,
+    slippage_bps: float = 0.0,
 ):
-    """Backtest only against real Binance historical candles."""
+    """Backtest only against real Binance historical candles.
+
+    Fees and slippage are explicit simulation assumptions, never market data.
+    Entry slippage is adverse for a long; exit slippage is adverse as well.
+    """
     pair = symbol.upper().replace('/', '') + 'USDT'
     rows = await binance_klines(pair, interval, min(limit, 1000))
     if len(rows) < 100:
         raise ValueError('Not enough real historical candles')
     if initial_equity <= 0 or risk_pct <= 0 or max_position_pct <= 0:
         raise ValueError('Backtest capital and risk parameters must be positive')
+    if fee_bps < 0 or slippage_bps < 0:
+        raise ValueError('Backtest fee and slippage assumptions cannot be negative')
 
+    fee_rate = fee_bps / 10000.0
+    slippage_rate = slippage_bps / 10000.0
     equity = float(initial_equity)
     peak_equity = equity
     max_drawdown_pct = 0.0
@@ -50,9 +60,20 @@ async def backtest_binance(
                 exit_price = in_trade['tp']
                 reason = 'TP'
             if exit_price is not None:
-                pnl = (exit_price - in_trade['entry']) * in_trade['qty']
+                gross_exit = exit_price * (1.0 - slippage_rate)
+                gross_pnl = (gross_exit - in_trade['entry']) * in_trade['qty']
+                exit_fee = gross_exit * in_trade['qty'] * fee_rate
+                pnl = gross_pnl - exit_fee - in_trade['entry_fee']
                 equity += pnl
-                trades.append({**in_trade, 'exit': exit_price, 'reason': reason, 'pnl': pnl, 'equity': equity})
+                trades.append({
+                    **in_trade,
+                    'exit': exit_price,
+                    'reason': reason,
+                    'gross_pnl': gross_pnl,
+                    'fees': in_trade['entry_fee'] + exit_fee,
+                    'pnl': pnl,
+                    'equity': equity,
+                })
                 in_trade = None
                 peak_equity = max(peak_equity, equity)
                 if peak_equity > 0:
@@ -62,7 +83,8 @@ async def backtest_binance(
         if tech.trend != 'bullish' or tech.rsi < 50:
             continue
 
-        entry = _num(rows[i + 1][1])
+        raw_entry = _num(rows[i + 1][1])
+        entry = raw_entry * (1.0 + slippage_rate)
         sl = max(entry - 2 * tech.atr, entry * 0.97)
         risk_per_unit = entry - sl
         if risk_per_unit <= 0:
@@ -75,26 +97,41 @@ async def backtest_binance(
         if qty <= 0:
             continue
 
+        entry_notional = entry * qty
+        entry_fee = entry_notional * fee_rate
         tp = entry + risk_per_unit * 2.0
         in_trade = {
             'entry': entry,
             'sl': sl,
             'tp': tp,
             'qty': qty,
+            'entry_fee': entry_fee,
             'opened_at': rows[i + 1][0],
         }
 
     if in_trade:
         exit_price = _num(rows[-1][4])
-        pnl = (exit_price - in_trade['entry']) * in_trade['qty']
+        gross_exit = exit_price * (1.0 - slippage_rate)
+        gross_pnl = (gross_exit - in_trade['entry']) * in_trade['qty']
+        exit_fee = gross_exit * in_trade['qty'] * fee_rate
+        pnl = gross_pnl - exit_fee - in_trade['entry_fee']
         equity += pnl
-        trades.append({**in_trade, 'exit': exit_price, 'reason': 'END_OF_DATA', 'pnl': pnl, 'equity': equity})
+        trades.append({
+            **in_trade,
+            'exit': exit_price,
+            'reason': 'END_OF_DATA',
+            'gross_pnl': gross_pnl,
+            'fees': in_trade['entry_fee'] + exit_fee,
+            'pnl': pnl,
+            'equity': equity,
+        })
         peak_equity = max(peak_equity, equity)
         if peak_equity > 0:
             max_drawdown_pct = max(max_drawdown_pct, (peak_equity - equity) / peak_equity * 100.0)
 
     wins = [trade for trade in trades if trade['pnl'] > 0]
     losses = [trade for trade in trades if trade['pnl'] <= 0]
+    total_fees = sum(trade['fees'] for trade in trades)
     return {
         'symbol': symbol,
         'pair': pair,
@@ -109,5 +146,8 @@ async def backtest_binance(
         'losses': len(losses),
         'win_rate_pct': (len(wins) / len(trades) * 100 if trades else 0),
         'max_drawdown_pct': max_drawdown_pct,
+        'total_fees': total_fees,
+        'fee_bps': fee_bps,
+        'slippage_bps': slippage_bps,
         'data_source': 'Binance historical klines',
     }
