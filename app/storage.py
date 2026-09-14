@@ -51,7 +51,7 @@ def open_paper_trades():
 def realized_pnl_since(start: datetime) -> float:
     start_iso = start.astimezone(timezone.utc).isoformat()
     with _connect() as con:
-        row = con.execute('SELECT COALESCE(SUM(pnl_usd, 0), 0) FROM paper_trades WHERE status="CLOSED" AND created_at >= ?', (start_iso,)).fetchone()
+        row = con.execute('SELECT COALESCE(SUM(pnl_usd), 0) FROM paper_trades WHERE status="CLOSED" AND created_at >= ?', (start_iso,)).fetchone()
     return float(row[0] or 0.0)
 
 
