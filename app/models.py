@@ -50,6 +50,7 @@ class TradePlan(BaseModel):
     reasons: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     mode: str = 'paper'
+    market_returns: list[float] = Field(default_factory=list)
 
 class ScanResult(BaseModel):
     token: Token
