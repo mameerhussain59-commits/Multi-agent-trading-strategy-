@@ -7,7 +7,7 @@ from app.backtest import backtest_binance
 from app.portfolio import portfolio_gate
 from app.config import settings
 
-app = FastAPI(title='Multi-Agent Crypto Trader', version='0.6.1')
+app = FastAPI(title='Multi-Agent Crypto Trader', version='0.7.0')
 master = MasterAgent()
 
 
@@ -67,11 +67,19 @@ async def audit(limit: int = 200):
 
 
 @app.get('/api/backtest/{symbol}')
-async def backtest(symbol: str, interval: str = '1h', limit: int = 1000):
+async def backtest(
+    symbol: str,
+    interval: str = '1h',
+    limit: int = 1000,
+    fee_bps: float = 10.0,
+    slippage_bps: float = 0.0,
+):
     if interval not in {'1m', '5m', '15m', '30m', '1h', '4h', '1d'}:
         raise HTTPException(400, 'unsupported interval')
     if limit < 100 or limit > 1000:
         raise HTTPException(400, 'limit must be 100..1000')
+    if fee_bps < 0 or slippage_bps < 0:
+        raise HTTPException(400, 'fee_bps and slippage_bps must be non-negative')
     return await backtest_binance(
         symbol,
         interval,
@@ -79,4 +87,6 @@ async def backtest(symbol: str, interval: str = '1h', limit: int = 1000):
         settings.account_equity_usd,
         settings.risk_per_trade_pct,
         settings.max_position_pct,
+        fee_bps,
+        slippage_bps,
     )
