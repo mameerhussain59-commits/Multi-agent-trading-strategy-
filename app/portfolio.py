@@ -3,6 +3,7 @@ from datetime import datetime, time, timezone
 from math import sqrt
 
 from app.config import settings
+from app.exposure import exposure_gate
 from app.storage import open_paper_trades, realized_pnl_since
 
 
@@ -47,7 +48,7 @@ def portfolio_gate(plan) -> tuple[bool, list[str]]:
         payload = trade.get('payload', {})
         try:
             total_risk += float(payload.get('risk_usd', 0))
-            total_exposure += float(payload.get('position_size', 0)) * float(payload.get('entry', 0))
+            total_exposure += float(payload.get('remaining_size', payload.get('position_size', 0))) * float(payload.get('entry', 0))
         except (TypeError, ValueError):
             continue
         corr = _correlation(getattr(plan, 'market_returns', []), payload.get('market_returns', []))
@@ -64,4 +65,13 @@ def portfolio_gate(plan) -> tuple[bool, list[str]]:
     if proposed_exposure > max_exposure:
         warnings.append(f'Total exposure ${proposed_exposure:.2f} exceeds portfolio exposure cap ${max_exposure:.2f}')
 
-    return not warnings, warnings
+    exposure_allowed, exposure_warnings = exposure_gate(
+        plan,
+        open_trades,
+        settings.account_equity_usd,
+        max_total_notional_pct=settings.max_total_exposure_pct,
+        max_bucket_pct=25.0,
+    )
+    warnings.extend(exposure_warnings)
+
+    return not warnings and exposure_allowed, warnings
