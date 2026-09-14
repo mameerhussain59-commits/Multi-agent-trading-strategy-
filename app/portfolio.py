@@ -1,7 +1,13 @@
 from __future__ import annotations
+from datetime import datetime, time, timezone
 
 from app.config import settings
-from app.storage import open_paper_trades
+from app.storage import open_paper_trades, realized_pnl_since
+
+
+def _utc_day_start() -> datetime:
+    now = datetime.now(timezone.utc)
+    return datetime.combine(now.date(), time.min, tzinfo=timezone.utc)
 
 
 def portfolio_gate(plan) -> tuple[bool, list[str]]:
@@ -11,6 +17,14 @@ def portfolio_gate(plan) -> tuple[bool, list[str]]:
 
     if any(t['symbol'].upper() == plan.symbol.upper() for t in open_trades):
         return False, ['An open paper position already exists for this symbol']
+
+    realized_today = realized_pnl_since(_utc_day_start())
+    max_daily_loss = settings.account_equity_usd * (settings.max_daily_loss_pct / 100.0)
+    if realized_today <= -max_daily_loss:
+        return False, [
+            f'Daily loss kill switch active: realized PnL ${realized_today:.2f} '
+            f'exceeds loss limit ${max_daily_loss:.2f}'
+        ]
 
     if len(open_trades) >= settings.max_concurrent_positions:
         warnings.append(f'Maximum concurrent positions reached ({settings.max_concurrent_positions})')
