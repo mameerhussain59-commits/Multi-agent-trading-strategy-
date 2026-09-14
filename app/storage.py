@@ -9,6 +9,7 @@ def _connect():
     con = sqlite3.connect(settings.db_path)
     con.execute('CREATE TABLE IF NOT EXISTS scans (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL, payload TEXT NOT NULL)')
     con.execute('CREATE TABLE IF NOT EXISTS paper_trades (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL, symbol TEXT NOT NULL, payload TEXT NOT NULL, status TEXT NOT NULL, exit_price REAL, exit_reason TEXT, pnl_usd REAL, closed_at TEXT)')
+    con.execute('CREATE TABLE IF NOT EXISTS paper_trade_events (id INTEGER PRIMARY KEY, trade_id INTEGER NOT NULL, created_at TEXT NOT NULL, quantity REAL NOT NULL, exit_price REAL NOT NULL, reason TEXT NOT NULL, pnl_usd REAL NOT NULL)')
     for col, typ in [('exit_price', 'REAL'), ('exit_reason', 'TEXT'), ('pnl_usd', 'REAL'), ('closed_at', 'TEXT')]:
         try:
             con.execute(f'ALTER TABLE paper_trades ADD COLUMN {col} {typ}')
@@ -51,7 +52,7 @@ def open_paper_trades():
 def realized_pnl_since(start: datetime) -> float:
     start_iso = start.astimezone(timezone.utc).isoformat()
     with _connect() as con:
-        row = con.execute('SELECT COALESCE(SUM(pnl_usd), 0) FROM paper_trades WHERE status="CLOSED" AND COALESCE(closed_at, created_at) >= ?', (start_iso,)).fetchone()
+        row = con.execute('SELECT COALESCE(SUM(pnl_usd), 0) FROM paper_trade_events WHERE created_at >= ?', (start_iso,)).fetchone()
     return float(row[0] or 0.0)
 
 
@@ -63,18 +64,20 @@ def update_paper_trade_payload(trade_id, payload):
 
 def close_paper_trade(trade_id, exit_price, reason, quantity=None):
     with _connect() as con:
-        row = con.execute('SELECT payload,pnl_usd FROM paper_trades WHERE id=? AND status="OPEN"', (trade_id,)).fetchone()
+        row = con.execute('SELECT symbol,payload,pnl_usd FROM paper_trades WHERE id=? AND status="OPEN"', (trade_id,)).fetchone()
         if not row:
             return None
-        plan = json.loads(row[0])
+        plan = json.loads(row[1])
         remaining = float(plan.get('remaining_size', plan['position_size']))
         qty = min(remaining, float(quantity)) if quantity is not None else remaining
         if qty <= 0:
             return 0.0
-        pnl = (float(exit_price) - float(plan['entry'])) * qty
+        exit_price = float(exit_price)
+        pnl = (exit_price - float(plan['entry'])) * qty
         left = remaining - qty
-        accumulated = float(row[1] or 0.0) + pnl
+        accumulated = float(row[2] or 0.0) + pnl
         now = datetime.now(timezone.utc).isoformat()
+        con.execute('INSERT INTO paper_trade_events(trade_id,created_at,quantity,exit_price,reason,pnl_usd) VALUES (?,?,?,?,?,?)', (trade_id, now, qty, exit_price, reason, pnl))
         if left <= 1e-12:
             con.execute('UPDATE paper_trades SET status="CLOSED",exit_price=?,exit_reason=?,pnl_usd=?,closed_at=? WHERE id=?', (exit_price, reason, accumulated, now, trade_id))
         else:
