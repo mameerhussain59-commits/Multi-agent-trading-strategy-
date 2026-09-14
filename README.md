@@ -10,8 +10,8 @@ A real-data multi-agent crypto research and paper-trading system. **No synthetic
 
 - **Master Agent**: orchestrates the complete scan.
 - **Token Hunter**: reads MrNasdog research pages live and accepts only pages exposing an explicit 0-10 score.
-- **Market Data Agent**: Binance public API first, Bybit public API fallback.
-- **Fundamental/Context Agent**: CoinGecko market-cap and metadata plus DEX Screener pair/liquidity data.
+- **Market Data Agent**: Binance public API first, Bybit public API fallback; both provide live spot order books for spread verification.
+- **Fundamental/Context Agent**: CoinGecko market-cap and metadata plus DEX Screener pair/liquidity data. CoinGecko market results are briefly cached during a scan to avoid redundant provider requests while preserving real observations.
 - **Technical Agent**: RSI, EMA(20), EMA(50), ATR and trend from real exchange candles.
 - **Signal Agent**: combines MrNasdog score, live momentum, 24h movement, volume and liquidity gates.
 - **Risk Agent**: fixed account-risk sizing, stop loss and three take-profit levels.
@@ -29,11 +29,11 @@ A real-data multi-agent crypto research and paper-trading system. **No synthetic
 4. CoinGecko public market API
 5. DEX Screener public API
 
-Every scan result contains source names and timestamps. If a live exchange cannot provide a symbol, that symbol is skipped rather than replaced with invented data.
+Every scan result contains source names and timestamps. If a live exchange cannot provide a symbol, that symbol is skipped rather than replaced with invented data. Execution eligibility also fails closed when the live order-book spread cannot be measured.
 
 ## Backtesting
 
-`GET /api/backtest/{symbol}?interval=1h&limit=1000` uses real historical Binance klines only. It never generates synthetic candles. Entries use the next real candle open after a completed signal; if a real candle touches both SL and TP, the backtest assumes SL first conservatively. Open positions at the end of the dataset are marked to the final real close. The report includes return, win rate and maximum drawdown and applies the configured position-size cap.
+`GET /api/backtest/{symbol}?interval=1h&limit=1000&fee_bps=10&slippage_bps=0` uses real historical Binance klines only. It never generates synthetic candles. Entries use the next real candle open after a completed signal; if a real candle touches both SL and TP, the backtest assumes SL first conservatively. Open positions at the end of the dataset are marked to the final real close. The report includes return, win rate, maximum drawdown, total fees and the explicit fee/slippage assumptions. CLI syntax is `python -m app.cli backtest BTC [fee_bps] [slippage_bps]`.
 
 ## Safety
 
@@ -58,7 +58,7 @@ API:
 - `POST /api/paper/monitor`
 - `GET /api/paper/trades`
 - `GET /api/audit?limit=200`
-- `GET /api/backtest/{symbol}?interval=1h&limit=1000`
+- `GET /api/backtest/{symbol}?interval=1h&limit=1000&fee_bps=10&slippage_bps=0`
 
 CLI:
 
@@ -76,7 +76,7 @@ The scheduler performs a live-data scan and paper-position monitoring cycle cont
 
 ## Data integrity rule
 
-The system must prefer **no result** over fake/stale data. MrNasdog scores are read from the live site and market prices/candles are read from public APIs at scan time. No hardcoded price, candle, volume, market cap or token score is used.
+The system must prefer **no result** over fake/stale data. MrNasdog scores are read from the live site and market prices/candles/order books are read from public APIs at scan time. No hardcoded price, candle, volume, market cap or token score is used.
 
 ## Disclaimer
 
